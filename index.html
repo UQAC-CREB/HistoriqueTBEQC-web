@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tordeuse des bourgeons de l'épinette — Québec</title>
+
+  <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Source+Sans+3:wght@400;600&display=swap" rel="stylesheet" />
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --accent:       #2e7d32;
+      --header-bg:    #2C3E50;
+      --panel-bg:     #f9f9f9;
+      --panel-border: #dde2e8;
+      --box-bg:       #ffffff;
+      --box-shadow:   0 2px 8px rgba(0,0,0,0.08);
+      --text-main:    #2a2a2a;
+      --text-muted:   #6b7280;
+      --text-label:   #374151;
+    }
+
+    html, body {
+      height: 100%;
+      font-family: 'Source Sans 3', sans-serif;
+      background: var(--panel-bg);
+      color: var(--text-main);
+      overflow: hidden;
+    }
+
+    /* ── HEADER ── */
+    #header {
+      height: 56px; background: var(--header-bg);
+      display: flex; align-items: center;
+      padding: 0 20px; gap: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      position: relative; z-index: 10;
+    }
+    #header .icon { font-size: 22px; flex-shrink: 0; }
+    #header h1 {
+      font-family: 'Oswald', sans-serif; font-size: 13.5px; font-weight: 600;
+      letter-spacing: 1.3px; text-transform: uppercase; color: #fff; line-height: 1.25;
+    }
+
+    /* ── LAYOUT ── */
+    #app { display: flex; height: calc(100vh - 56px); }
+
+    /* ── PANEL ── */
+    #panel {
+      width: 680px; min-width: 680px;
+      background: var(--panel-bg);
+      border-right: 1px solid var(--panel-border);
+      display: flex; flex-direction: column;
+      overflow-y: auto; padding: 18px 16px; gap: 16px;
+    }
+    .panel-section { display: flex; flex-direction: column; gap: 7px; }
+    .panel-label {
+      font-family: 'Oswald', sans-serif; font-size: 11px;
+      letter-spacing: 1.6px; text-transform: uppercase;
+      color: var(--text-muted);
+    }
+
+    /* ── SLIDER ── */
+    .periode-wrap { display: flex; flex-direction: column; gap: 8px; }
+    .annee-labels {
+      display: flex; justify-content: space-between;
+      font-size: 10px; color: var(--text-muted);
+    }
+    input[type=range] { width: 100%; accent-color: var(--accent); cursor: pointer; height: 4px; }
+    .annee-current {
+      font-family: 'Oswald', sans-serif; font-size: 22px;
+      color: var(--accent); text-align: center; letter-spacing: 2px; font-weight: 700;
+    }
+
+    /* ── BOUTON ANIMER ── */
+    #btn-play {
+      background: var(--accent); border: none; border-radius: 6px;
+      color: #fff; font-family: 'Oswald', sans-serif;
+      font-size: 13px; letter-spacing: 1px;
+      padding: 8px 16px; cursor: pointer; transition: background 0.2s; width: 100%;
+    }
+    #btn-play:hover { background: #1b5e20; }
+
+    .divider { border: none; border-top: 1px solid var(--panel-border); }
+
+    /* ── BOÎTES GRAPHIQUES ── */
+    .chart-box {
+      background: var(--box-bg);
+      border: 1px solid var(--panel-border);
+      border-radius: 8px; padding: 14px;
+      box-shadow: var(--box-shadow);
+    }
+    .chart-title {
+      font-family: 'Source Sans 3', sans-serif;
+      font-size: 12px; font-weight: 600;
+      color: var(--text-label); margin-bottom: 8px;
+    }
+
+    /* ── MAP ── */
+    #map { flex: 1; position: relative; }
+    #map-container { width: 100%; height: 100%; }
+
+    #basemap-switch {
+      position: absolute; top: 10px; right: 10px; z-index: 5;
+      display: flex; background: rgba(255,255,255,0.95);
+      border: 1px solid #d1d5db; border-radius: 6px;
+      overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+    }
+    .bm-btn {
+      padding: 6px 13px; font-family: 'Source Sans 3', sans-serif;
+      font-size: 12px; color: var(--text-muted); cursor: pointer;
+      border: none; background: transparent;
+      border-right: 1px solid #d1d5db;
+      transition: background 0.15s, color 0.15s; white-space: nowrap;
+    }
+    .bm-btn:last-child { border-right: none; }
+    .bm-btn.active { background: var(--header-bg); color: #fff; }
+    .bm-btn:hover:not(.active) { background: #f3f4f6; color: var(--text-main); }
+
+    /* ── LOADING ── */
+    #loading {
+      position: absolute; inset: 0; background: #f9f9f9;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 16px; z-index: 100; transition: opacity 0.5s;
+    }
+    #loading.hidden { opacity: 0; pointer-events: none; }
+    #loading-msg {
+      font-family: 'Oswald', sans-serif; letter-spacing: 2px;
+      font-size: 13px; color: var(--text-muted); text-transform: uppercase;
+    }
+    .spinner {
+      width: 40px; height: 40px;
+      border: 3px solid #e5e7eb;
+      border-top-color: var(--accent);
+      border-radius: 50%; animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #panel::-webkit-scrollbar { width: 5px; }
+    #panel::-webkit-scrollbar-track { background: transparent; }
+    #panel::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
+  </style>
+</head>
+<body>
+
+<div id="loading">
+  <div class="spinner"></div>
+  <p id="loading-msg">Chargement des données…</p>
+</div>
+
+<div id="header">
+  <span class="icon">🌲</span>
+  <h1>Superficie annuelle affectée par la tordeuse des bourgeons de l'épinette — 2006 à 2024</h1>
+</div>
+
+<div id="app">
+  <div id="panel">
+
+    <div class="panel-section">
+      <span class="panel-label">Année</span>
+      <div class="periode-wrap">
+        <div class="annee-current" id="annee-display">2006</div>
+        <input type="range" id="slider-annee" min="0" max="18" value="0" step="1" />
+        <div class="annee-labels">
+          <span>2006</span><span>2008</span><span>2010</span><span>2012</span><span>2014</span>
+          <span>2016</span><span>2018</span><span>2020</span><span>2022</span><span>2024</span>
+        </div>
+        <button id="btn-play">▶ Animer</button>
+      </div>
+    </div>
+
+    <hr class="divider" />
+
+    <div class="panel-section">
+      <div class="chart-box">
+        <div class="chart-title">Saguenay–Lac-Saint-Jean — Superficie (M ha)</div>
+        <canvas id="chartSag" height="120"></canvas>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <div class="chart-box">
+        <div class="chart-title">Province du Québec — Superficie (M ha)</div>
+        <canvas id="chartQc" height="120"></canvas>
+      </div>
+    </div>
+
+  </div>
+
+  <div id="map">
+    <div id="map-container"></div>
+    <div id="basemap-switch">
+      <button class="bm-btn active" data-bm="neutre">Neutre</button>
+      <button class="bm-btn"        data-bm="satellite">Satellite</button>
+      <button class="bm-btn"        data-bm="sombre">Sombre</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const ANNEES = Array.from({length:19}, (_,i) => 2006+i);
+const BOUNDS = [[-79.5, 45.0], [-56.5, 52.5]];
+
+function googleSatStyle() {
+  return {
+    version: 8,
+    glyphs: 'https://fonts.openmaptiles.org/{fontstack}/{range}.pbf',
+    sources: { 'gsat': { type:'raster', tiles:[
+      'https://mt0.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
+      'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
+      'https://mt2.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
+      'https://mt3.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
+    ], tileSize:256, attribution:'© Google' }},
+    layers: [{ id:'gsat-layer', type:'raster', source:'gsat', paint:{ 'raster-opacity': 0.85 } }]
+  };
+}
+const STYLE_URLS = {
+  neutre:    'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
+  satellite: googleSatStyle(),
+  sombre:    'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
+};
+
+let map, chartSag, chartQc;
+let currentAnnee = 2006;
+let currentBm    = 'neutre';
+let playTimer    = null;
+let tableData    = [];
+let provGJ       = null;
+const geoCache   = {};
+
+function fmtNum(n) {
+  if (!n && n !== 0) return '—';
+  return new Intl.NumberFormat('fr-CA', { maximumFractionDigits: 2 }).format(n);
+}
+function setLoadingMsg(msg) { document.getElementById('loading-msg').textContent = msg; }
+
+// ── Charts ──
+function makeChartConfig(activeColor) {
+  return {
+    type: 'bar',
+    data: {
+      labels: ANNEES.map(String),
+      datasets: [{ data: ANNEES.map(()=>0), backgroundColor: ANNEES.map(()=>'#d1d5db'), borderRadius: 3 }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: true,
+      animation: { duration: 300 },
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: c => fmtNum(c.raw) + ' M ha' } }
+      },
+      scales: {
+        x: {
+          ticks: { color:'#6b7280', font:{ family:'Source Sans 3', size:9, weight:'600' }, maxRotation:30 },
+          grid: { color:'rgba(0,0,0,0.05)' }
+        },
+        y: {
+          min: 0, max: 15,
+          ticks: { color:'#6b7280', font:{ family:'Source Sans 3', size:9 }, callback: v => v + ' M' },
+          grid: { color:'rgba(0,0,0,0.06)' }
+        }
+      }
+    }
+  };
+}
+
+function initCharts() {
+  chartSag = new Chart(document.getElementById('chartSag').getContext('2d'), makeChartConfig('#4a5a76'));
+  chartQc  = new Chart(document.getElementById('chartQc').getContext('2d'),  makeChartConfig('#085016'));
+}
+
+function updateCharts() {
+  const configs = [
+    { inst: chartSag, region: 'Saguenay–Lac-Saint-Jean', color: '#4a5a76' },
+    { inst: chartQc,  region: 'Province du Québec',      color: '#085016' },
+  ];
+  configs.forEach(({ inst, region, color }) => {
+    inst.data.datasets[0].data = ANNEES.map(yr => {
+      const rows = tableData.filter(r => r.RES_NM_REG === region && String(r.AN_TBE) === String(yr));
+      return rows.reduce((a,b) => a + (b.SUP_HA || 0), 0) / 1e6;
+    });
+    inst.data.datasets[0].backgroundColor = ANNEES.map(yr =>
+      yr === currentAnnee ? color : '#d1d5db'
+    );
+    inst.update();
+  });
+}
+
+// ── Carte ──
+function getStyle(bm) { return bm === 'satellite' ? googleSatStyle() : STYLE_URLS[bm]; }
+
+function addProvLayer() {
+  if (!provGJ) return;
+  if (!map.getSource('prov')) map.addSource('prov', { type:'geojson', data: provGJ });
+  if (!map.getLayer('prov-fill')) {
+    map.addLayer({ id:'prov-fill', type:'fill', source:'prov',
+      paint:{ 'fill-color':'#4a4a4a', 'fill-opacity': 0.25 }
+    });
+  }
+}
+
+async function loadAnnee(yr) {
+  if (geoCache[yr]) return geoCache[yr];
+  const r = await fetch(`data/vec/TBE_${yr}.geojson`);
+  geoCache[yr] = await r.json();
+  return geoCache[yr];
+}
+
+async function updateTBELayer() {
+  const gj = await loadAnnee(currentAnnee);
+  if (map.getSource('tbe')) {
+    map.getSource('tbe').setData(gj);
+  } else {
+    map.addSource('tbe', { type:'geojson', data: gj });
+    map.addLayer({ id:'tbe-fill', type:'fill', source:'tbe',
+      paint:{ 'fill-color':'#085016', 'fill-opacity': 0.7 }
+    });
+  }
+}
+
+function addAllLayers() { addProvLayer(); updateTBELayer(); }
+
+function switchBasemap(bm) {
+  if (bm === currentBm) return;
+  currentBm = bm;
+  const center = map.getCenter(), zoom = map.getZoom();
+  map.setStyle(getStyle(bm));
+  map.once('styledata', () => { map.jumpTo({ center, zoom }); addAllLayers(); });
+}
+
+function startPlay() {
+  if (playTimer) return;
+  document.getElementById('btn-play').textContent = '⏹ Arrêter';
+  let idx = ANNEES.indexOf(currentAnnee);
+  playTimer = setInterval(() => {
+    idx = (idx + 1) % ANNEES.length;
+    setAnnee(idx);
+    if (idx === ANNEES.length - 1) stopPlay();
+  }, 1500);
+}
+function stopPlay() {
+  clearInterval(playTimer); playTimer = null;
+  document.getElementById('btn-play').textContent = '▶ Animer';
+}
+
+function setAnnee(idx) {
+  currentAnnee = ANNEES[idx];
+  document.getElementById('slider-annee').value = idx;
+  document.getElementById('annee-display').textContent = currentAnnee;
+  updateTBELayer();
+  updateCharts();
+}
+
+async function initMap() {
+  setLoadingMsg('Chargement des données…');
+  const [provData, tableJSON] = await Promise.all([
+    fetch('data/province.geojson').then(r => r.json()),
+    fetch('data/table.json').then(r => r.json()),
+  ]);
+  provGJ    = provData;
+  tableData = tableJSON;
+  setLoadingMsg('Chargement de la première année…');
+  await loadAnnee(currentAnnee);
+
+  map = new maplibregl.Map({
+    container: 'map-container',
+    style: getStyle(currentBm),
+    bounds: BOUNDS,
+    fitBoundsOptions: { padding: 20 },
+    attributionControl: false,
+  });
+  map.addControl(new maplibregl.AttributionControl({ compact:true }), 'bottom-right');
+  map.addControl(new maplibregl.ScaleControl({ unit:'metric' }), 'bottom-left');
+  map.addControl(new maplibregl.NavigationControl(), 'bottom-right');
+  map.on('load', () => {
+    addAllLayers();
+    updateCharts();
+    document.getElementById('loading').classList.add('hidden');
+  });
+}
+
+document.getElementById('slider-annee').addEventListener('input', e => {
+  stopPlay(); setAnnee(parseInt(e.target.value));
+});
+document.getElementById('btn-play').addEventListener('click', () => {
+  if (playTimer) stopPlay(); else startPlay();
+});
+document.querySelectorAll('.bm-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.bm-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active'); switchBasemap(btn.dataset.bm);
+  });
+});
+
+initCharts();
+initMap();
+</script>
+</body>
+</html>
